@@ -1,6 +1,6 @@
 
 import { Client } from "@microsoft/microsoft-graph-client";
-import { Case, NoticePurpose, PhotoWithMeta, EvidencePhoto, Property } from './types';
+import { Case, NoticePurpose, PhotoWithMeta, EvidencePhoto, Property, ComplaintLogEntry } from './types';
 import { getMicrosoftAccessToken, getConfig } from './config';
 import { EVIDENCE_PHOTO_FOLDER_NAME } from './constants';
 import { createReport } from 'docx-templates';
@@ -88,22 +88,22 @@ async function getOrCreateExcelFile(): Promise<string> {
     return '';
 }
 
-export const getSheetData = async (): Promise<{ cases: Case[], properties: Property[] }> => {
+export const getSheetData = async (): Promise<{ cases: Case[], properties: Property[], complaintLog: ComplaintLogEntry[] }> => {
     const graph = await getGraphClient();
     try {
         const result = await graph.api(`/me/drive/root/search(q='commerce-app-data.json')`).get();
-        if (!result.value || result.value.length === 0) return { cases: [], properties: [] };
+        if (!result.value || result.value.length === 0) return { cases: [], properties: [], complaintLog: [] };
 
         const fileId = result.value[0].id;
         const content = await graph.api(`/me/drive/items/${fileId}/content`).get();
-        return content || { cases: [], properties: [] };
+        return content || { cases: [], properties: [], complaintLog: [] };
     } catch (e) {
         console.warn("Failed to get data from OneDrive, returning empty.", e);
-        return { cases: [], properties: [] };
+        return { cases: [], properties: [], complaintLog: [] };
     }
 };
 
-export const writeSheetData = async (data: { cases: Case[]; properties: Property[] }) => {
+export const writeSheetData = async (data: { cases: Case[]; properties: Property[]; complaintLog?: ComplaintLogEntry[] }) => {
     const graph = await getGraphClient();
     try {
         await graph.api(`/me/drive/root:/commerce-app-data.json:/content`).put(data);
@@ -295,6 +295,89 @@ export const generateEnvelopeDocument = async (caseData: Case, recipient: 'owner
     return { docUrl: uploadResult.webUrl };
 };
 
+export const generateStatementOfCostDocument = async (caseData: Case): Promise<{ docUrl: string }> => {
+    const graph = await getGraphClient();
+    const config = await getConfig();
+    const templateUrl = config?.microsoft?.templateUrls?.COURT_COVER || config?.microsoft?.statementOfCostTemplateUrl;
+    if (!templateUrl) throw new Error(`No Statement of Cost template URL configured.`);
+
+    const itemId = templateUrl.split('/').pop() || '';
+    const templateContent = await graph.api(`/me/drive/items/${itemId}/content`).get();
+    const templateBuffer = await templateContent.arrayBuffer();
+
+    const data = {
+        OWNER_NAME: caseData.ownerInfo.name || 'Property Owner',
+        ADDRESS: caseData.address.street,
+        COST: caseData.abatement?.costDetails?.total || 0,
+        WORK_DATE: caseData.abatement?.workDate || ''
+    };
+
+    const outputBuffer = await createReport({
+        template: templateBuffer,
+        data,
+        cmdDelimiter: ['{{', '}}']
+    });
+
+    const fileName = `Statement of Cost - ${caseData.caseId}.docx`;
+    const uploadResult = await graph.api(`/me/drive/root:/Abatements/Statements/${fileName}:/content`).put(outputBuffer);
+    return { docUrl: uploadResult.webUrl };
+};
+
+export const generateNoticeOfLienDocument = async (caseData: Case): Promise<{ docUrl: string }> => {
+    const graph = await getGraphClient();
+    const config = await getConfig();
+    const templateUrl = config?.microsoft?.noticeOfLienTemplateUrl;
+    if (!templateUrl) throw new Error(`No Notice of Lien template URL configured.`);
+
+    const itemId = templateUrl.split('/').pop() || '';
+    const templateContent = await graph.api(`/me/drive/items/${itemId}/content`).get();
+    const templateBuffer = await templateContent.arrayBuffer();
+
+    const data = {
+        OWNER_NAME: caseData.ownerInfo.name || 'Property Owner',
+        ADDRESS: caseData.address.street,
+        LEGAL_DESCRIPTION: caseData.abatement?.propertyInfo?.legalDescription || '',
+        AMOUNT: caseData.abatement?.costDetails?.total || 0
+    };
+
+    const outputBuffer = await createReport({
+        template: templateBuffer,
+        data,
+        cmdDelimiter: ['{{', '}}']
+    });
+
+    const fileName = `Notice of Lien - ${caseData.caseId}.docx`;
+    const uploadResult = await graph.api(`/me/drive/root:/Abatements/Liens/${fileName}:/content`).put(outputBuffer);
+    return { docUrl: uploadResult.webUrl };
+};
+
+export const generateCertificateOfLienDocument = async (caseData: Case): Promise<{ docUrl: string }> => {
+    const graph = await getGraphClient();
+    const config = await getConfig();
+    const templateUrl = config?.microsoft?.certificateOfLienTemplateUrl;
+    if (!templateUrl) throw new Error(`No Certificate of Lien template URL configured.`);
+
+    const itemId = templateUrl.split('/').pop() || '';
+    const templateContent = await graph.api(`/me/drive/items/${itemId}/content`).get();
+    const templateBuffer = await templateContent.arrayBuffer();
+
+    const data = {
+        OWNER_NAME: caseData.ownerInfo.name || 'Property Owner',
+        ADDRESS: caseData.address.street,
+        LEGAL_DESCRIPTION: caseData.abatement?.propertyInfo?.legalDescription || '',
+    };
+
+    const outputBuffer = await createReport({
+        template: templateBuffer,
+        data,
+        cmdDelimiter: ['{{', '}}']
+    });
+
+    const fileName = `Certificate of Lien - ${caseData.caseId}.docx`;
+    const uploadResult = await graph.api(`/me/drive/root:/Abatements/Certificates/${fileName}:/content`).put(outputBuffer);
+    return { docUrl: uploadResult.webUrl };
+};
+
 export const microsoftDataService = {
     getAllData: getSheetData,
     saveCase: async (caseData: Case): Promise<Case> => {
@@ -349,6 +432,46 @@ export const microsoftDataService = {
     generateNoticeDocument,
     generateCertificateOfMail,
     generateEnvelopeDocument,
+    generateStatementOfCostDocument,
+    generateNoticeOfLienDocument,
+    generateCertificateOfLienDocument,
+    saveComplaintLog: async (entry: ComplaintLogEntry): Promise<void> => {
+        const data = await getSheetData();
+        if (!data.complaintLog) data.complaintLog = [];
+        const index = data.complaintLog.findIndex(l => l.id === entry.id);
+        if (index > -1) {
+            data.complaintLog[index] = entry;
+        } else {
+            data.complaintLog.push(entry);
+        }
+        await writeSheetData(data);
+    },
+    downloadFullArchive: async (properties: Property[], cases: Case[], onProgress?: (msg: string) => void): Promise<void> => {
+        if (onProgress) onProgress("Preparing archive...");
+        console.log("Full archive request received for", properties.length, "properties");
+        // OneDrive doesn't support easy zip on the fly for arbitrary lists via Graph easily.
+        // We'll just open the root folder in a new window as a fallback.
+        window.open("https://onedrive.live.com/", "_blank");
+    },
+    downloadPropertyArchive: async (property: Property, cases: Case[]): Promise<void> => {
+        // Similar to full archive, open the address folder.
+        const rootId = await findOrCreateFolder(EVIDENCE_PHOTO_FOLDER_NAME);
+        const folderName = property.streetAddress.trim() || 'Unlisted Address';
+        const graph = await getGraphClient();
+        const search = await graph.api(`/me/drive/items/${rootId}/children`).filter(`name eq '${folderName.replace(/'/g, "''")}'`).get();
+        if (search.value && search.value.length > 0) {
+            window.open(search.value[0].webUrl, "_blank");
+        } else {
+            window.open("https://onedrive.live.com/", "_blank");
+        }
+    },
+    downloadCourtPacket: async (caseData: Case): Promise<void> => {
+        // Find the 'Notices' subfolder for this case and open it.
+        const folderId = await ensureCaseFolderStructure(caseData, 'Notices');
+        const graph = await getGraphClient();
+        const folder = await graph.api(`/me/drive/items/${folderId}`).get();
+        window.open(folder.webUrl, "_blank");
+    },
     testConnection: async (): Promise<{ ok: boolean; message: string }> => {
         try {
             const graph = await getGraphClient();

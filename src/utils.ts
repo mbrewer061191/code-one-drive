@@ -113,7 +113,7 @@ export const compareStreets = (addressA: string, addressB: string): number => {
 export async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout: number = 15000): Promise<Response> {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
-    
+
     try {
         const response = await fetch(url, {
             ...options,
@@ -129,3 +129,7 @@ export async function fetchWithTimeout(url: string, options: RequestInit = {}, t
         throw error;
     }
 }
+/**
+ * Generates a unique ID for new records.
+ */
+export const generateId = () => Math.random().toString(36).substring(2, 11);
