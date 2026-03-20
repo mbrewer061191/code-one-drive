@@ -1,0 +1,7 @@
+{
+  "description": "A code enforcement application to document violations and issue abatement notices.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "name": "App"
+}

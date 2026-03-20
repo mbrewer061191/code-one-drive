@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Commerce, OK Code Enforcement</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Merriweather:wght@400;7700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root">
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; color: #666;">
+        <div style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite; margin-bottom: 1rem;"></div>
+        <p>Loading Oklahoma Code Enforcement...</p>
+        <p style="font-size: 0.8rem; margin-top: 0.5rem;">If this takes more than 10 seconds, please check your internet connection.</p>
+      </div>
+      <style>
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+      </style>
+    </div>
+    <script>
+      // Polyfill process.env for the browser to avoid reference errors.
+      // The execution environment is expected to populate window.process.env.GEMINI_API_KEY.
+      window.process = window.process || { env: {} };
+      console.log("index.html: Page loaded, process polyfilled.");
+      window.addEventListener('load', () => {
+        console.log("index.html: window.onload triggered.");
+      });
+    </script>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>
